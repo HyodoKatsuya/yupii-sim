@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ゆぴぃ 品質リスク × GP普及数シミュレーター</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0b1220; --panel: #101c2e; --panel2: #0d1625;
+    --border: #1e2f45; --text: #c8d8ef; --muted: #4a6080; --dim: #2a3f5a;
+    --green: #1D9E75; --yellow: #BA7517; --red: #E24B4A;
+    --orange: #D85A30; --blue: #378ADD; --white: #eaf0fc;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    font-size: 12px; padding: 20px; min-height: 100vh; }
+  h1 { font-size: 17px; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+  .tag { font-size: 10px; color: var(--muted); letter-spacing: 1.5px; margin-bottom: 6px; }
+  .sub { font-size: 10.5px; color: var(--muted); margin-bottom: 20px; }
+  .layout { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .ctrl { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; width: 240px; flex-shrink: 0; }
+  .slbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px;
+    margin: 14px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+  .slbl:first-child { margin-top: 0; }
+  .sr { margin-bottom: 12px; }
+  .sr-hdr { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .sr-name { font-size: 10.5px; color: var(--muted); }
+  .sr-val { font-size: 11px; font-weight: 700; color: var(--green); }
+  .sr-note { font-size: 9.5px; color: var(--dim); margin-bottom: 3px; line-height: 1.5; }
+  input[type=range] { width: 100%; accent-color: var(--green); cursor: pointer; }
+  .hint { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-size: 10.5px; color: var(--muted); line-height: 1.8; margin-top: 10px; }
+  .rp { flex: 1; min-width: 300px; }
+  .sg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .sc { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; }
+  .sc-lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .sc-val { font-size: 20px; font-weight: 700; }
+  .sc-sub { font-size: 9.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+  .cp { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+  .ct { font-size: 11px; color: var(--white); margin-bottom: 2px; font-weight: 600; }
+  .cs { font-size: 9.5px; color: var(--muted); margin-bottom: 10px; }
+  .leg { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; font-size: 10.5px; color: var(--muted); }
+  .ld { display: flex; align-items: center; gap: 5px; }
+  .lb { width: 18px; height: 2.5px; border-radius: 1px; }
+  .sumbox { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-size: 11.5px; line-height: 2; }
+  .upg-box { background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; font-size: 10.5px; margin-bottom: 12px; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div class="tag">UBIE / 日常医療 — 2026-04</div>
+<h1>ゆぴぃ 品質リスク × GP普及数シミュレーター</h1>
+<p class="sub">①②＝3ヶ月で対応完了（頻度ゼロ想定）　④⑤＝スケールと比例する継続リスク　閾値: 1件/月超でスケール不可</p>
+
+<div class="layout">
+  <div class="ctrl">
+    <div class="slbl">GP成長モデル</div>
+    <div class="sr">
+      <div class="sr-hdr"><span class="sr-name">GP目標数</span><span class="sr-val" id="v-gp">10,000 GP</span></div>
+      <input type="range" id="s-gp" min="100" max="10000" step="100" value="10000" oninput="upd()">
+    </div>
+
+    <div class="slbl">ユーザー換算</div>
+    <div class="sr">
+      <div class="sr-note">月に1回以上受診する患者数（月次外来実患者数）</div>
+      <div class="sr-hdr"><span class="sr-name">月次外来実患者数/GP</span><span class="sr-val" id="v-pat">300 人/月</span></div>
+      <input type="range" id="s-pat" min="100" max="800" step="50" value="300" oninput="upd()">
+    </div>
+    <div class="sr">
+      <div class="sr-note">外来患者全体に対してゆぴぃをアクティブ利用している割合<br>L2のみ（LLMなし）≈12% ／ L2+3（LLMあり）≈40〜60%</div>
+      <div class="sr-hdr"><span class="sr-name">ゆぴぃアクティブ率（外来全体比）</span><span class="sr-val" id="v-cvr">12%</span></div>
+      <input type="range" id="s-cvr" min="5" max="70" step="1" value="12" oninput="upd()">
+    </div>
+    <div class="upg-box">
+      <span style="color:var(--muted)">1GPあたりアクティブユーザー: </span>
+      <span id="upg-val" style="font-weight:700;color:var(--blue)">—</span>
+    </div>
+
+    <div class="slbl">インシデント発生確率（仮説）</div>
+    <div class="sr">
+      <div class="sr-note">薬剤誤情報・コンテキスト誤認（④⑤）<br>アクティブユーザー1人が1ヶ月に経験する確率</div>
+      <div class="sr-hdr"><span class="sr-name">④⑤ 月次発生確率</span><span class="sr-val" id="v-r45">0.0100%</span></div>
+      <input type="range" id="s-r45" min="1" max="100" step="1" value="10" oninput="upd()">
+    </div>
+    <div class="sr">
+      <div class="sr-note">希死念慮・医師否定（①②）<br>月3以降ゼロ。対応前の発生確率</div>
+      <div class="sr-hdr"><span class="sr-name">①② 月次発生確率（対応前）</span><span class="sr-val" id="v-r12">0.0050%</span></div>
+      <input type="range" id="s-r12" min="1" max="50" step="1" value="5" oninput="upd()">
+    </div>
+
+    <div class="hint">
+      <strong style="color:var(--text)">確率の読み方：</strong><br>
+      「1万人中1人/月」= <strong>0.0100%/人/月</strong><br>
+      実績から逆算：<br>
+      月件数 ÷ アクティブユーザー × 100
+    </div>
+  </div>
+
+  <div class="rp">
+    <div class="sg">
+      <div class="sc">
+        <div class="sc-lbl">安全限界GP（①②対応前）</div>
+        <div class="sc-val" id="st-sb" style="color:#D85A30">—</div>
+        <div class="sc-sub">インシデント &lt;1件/月の上限</div>
+      </div>
+      <div class="sc">
+        <div class="sc-lbl">安全限界GP（④⑤のみ）</div>
+        <div class="sc-val" id="st-sa" style="color:#BA7517">—</div>
+        <div class="sc-sub">①②対応完了後の上限</div>
+      </div>
+      <div class="sc">
+        <div class="sc-lbl">目標GP時ユーザー数</div>
+        <div class="sc-val" id="st-u" style="color:#378ADD">—</div>
+        <div class="sc-sub" id="st-u-s">—</div>
+      </div>
+      <div class="sc">
+        <div class="sc-lbl">目標GP時 ④⑤リスク</div>
+        <div class="sc-val" id="st-r">—</div>
+        <div class="sc-sub" id="st-r-s">—</div>
+      </div>
+    </div>
+
+    <div class="cp">
+      <div class="ct">GP数 → 期待インシデント頻度（静的）</div>
+      <div class="cs">縦点線: 安全限界GP　赤破線: 閾値1件/月</div>
+      <div class="leg">
+        <span class="ld"><span class="lb" style="background:#D85A30"></span>①②+④⑤（対応前）</span>
+        <span class="ld"><span class="lb" style="background:#E24B4A"></span>④⑤のみ（対応後）</span>
+      </div>
+      <div style="position:relative;width:100%;height:180px"><canvas id="c-static"></canvas></div>
+    </div>
+
+    <div class="cp">
+      <div class="ct">時系列: インシデント頻度推移（2026/04〜2028/03）</div>
+      <div class="cs">オレンジ点線: ①②対応完了（月3）　右軸: GP数（青点線）</div>
+      <div class="leg">
+        <span class="ld"><span class="lb" style="background:#D85A30"></span>①②</span>
+        <span class="ld"><span class="lb" style="background:#E24B4A"></span>④⑤</span>
+        <span class="ld"><span class="lb" style="background:#888780"></span>合計</span>
+        <span class="ld"><span class="lb" style="background:#378ADD"></span>GP数</span>
+      </div>
+      <div style="position:relative;width:100%;height:200px"><canvas id="c-time"></canvas></div>
+    </div>
+
+    <div class="sumbox" id="sumbox"></div>
+  </div>
+</div>
+
+<script>
+const ML=Array.from({length:25},(_,i)=>{const d=new Date(2026,3+i);return d.getFullYear()+'/'+(d.getMonth()+1+'').padStart(2,'0');});
+const sig=(t,L,tm,k)=>Math.min(L,Math.max(0,Math.round(L/(1+Math.exp(-k*(t-tm))))));
+const fG=v=>v>=10000?'10,000':v>=1000?(v/1000).toFixed(1)+'K':v.toLocaleString();
+const fU=v=>v>=10000?(v/10000).toFixed(1)+'万':v.toLocaleString();
+let cS=null,cT=null;
+
+function upd(){
+  const G=+document.getElementById('s-gp').value;
+  const P=+document.getElementById('s-pat').value;
+  const C=+document.getElementById('s-cvr').value/100;
+  const r45=+document.getElementById('s-r45').value/10000;
+  const r12=+document.getElementById('s-r12').value/10000;
+  const upg=Math.round(P*C);
+  const FIX=3,TM=5,k=0.7;
+
+  document.getElementById('v-gp').textContent=G.toLocaleString()+' GP';
+  document.getElementById('v-pat').textContent=P+' 人/月';
+  document.getElementById('v-cvr').textContent=(C*100).toFixed(0)+'%';
+  document.getElementById('v-r45').textContent=(r45*100).toFixed(4)+'%';
+  document.getElementById('v-r12').textContent=(r12*100).toFixed(4)+'%';
+  document.getElementById('upg-val').textContent=upg+' 人';
+
+  const sbf=upg>0?Math.floor(1/((r12+r45)*upg)):99999;
+  const saf=upg>0?Math.floor(1/(r45*upg)):99999;
+  const tu=Math.round(G*upg);
+  const ri=+(G*upg*r45).toFixed(2);
+  const rc=ri<1?'#1D9E75':ri<5?'#BA7517':'#E24B4A';
+
+  document.getElementById('st-sb').textContent=fG(sbf)+' GP';
+  document.getElementById('st-sa').textContent=fG(saf)+' GP';
+  document.getElementById('st-u').textContent=fU(tu);
+  document.getElementById('st-u-s').textContent=G.toLocaleString()+'GP × '+upg+'人/GP';
+  document.getElementById('st-r').textContent=ri.toFixed(2)+' 件/月';
+  document.getElementById('st-r').style.color=rc;
+  document.getElementById('st-r-s').textContent=ri>=1?'⚠ 閾値超過 — 品質改善必須':'✓ 閾値以内';
+  document.getElementById('st-r-s').style.color=rc;
+
+  const mx=Math.max(G,500),st=Math.max(1,Math.ceil(mx/100));
+  const sl=[],db=[],da=[],th=[];
+  for(let g=0;g<=mx;g+=st){sl.push(g>=1000?(g/1000).toFixed(1)+'K':g);db.push(+(g*upg*(r12+r45)).toFixed(4));da.push(+(g*upg*r45).toFixed(4));th.push(1);}
+  cS.data.labels=sl;cS.data.datasets[0].data=db;cS.data.datasets[1].data=da;cS.data.datasets[2].data=th;cS.update('none');
+
+  const ti12=[],ti45=[],ttot=[],tgp=[];
+  for(let m=0;m<25;m++){
+    const g=sig(m,G,TM,k),u=g*upg,i12=m<FIX?u*r12:0,i45=u*r45;
+    ti12.push(+i12.toFixed(3));ti45.push(+i45.toFixed(3));ttot.push(+(i12+i45).toFixed(3));tgp.push(g);
+  }
+  cT.data.datasets[0].data=ti12;cT.data.datasets[1].data=ti45;cT.data.datasets[2].data=ttot;cT.data.datasets[3].data=tgp;cT.data.datasets[4].data=Array(25).fill(1);cT.update('none');
+
+  const imp=upg>0?Math.floor(1/(r45*0.5*upg)):99999;
+  document.getElementById('sumbox').innerHTML=`
+    <div style="font-size:9.5px;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">試算サマリー</div>
+    <div><span style="color:#D85A30;font-weight:700">①②対応前の安全上限: </span>${fG(sbf)} GP <span style="color:#4a6080;font-size:10px">— これ以上でインシデント1件/月超</span></div>
+    <div><span style="color:#BA7517;font-weight:700">①②対応後（④⑤のみ）の安全上限: </span>${fG(saf)} GP</div>
+    <div><span style="color:#378ADD;font-weight:700">目標${G.toLocaleString()}GP到達時ユーザー: </span>${fU(tu)}</div>
+    <div><span style="color:${rc};font-weight:700">目標GP時 ④⑤インシデント: </span><span style="color:${rc}">${ri.toFixed(2)} 件/月</span>${ri>=1?` <span style="color:#E24B4A">— 品質改善なしにスケール不可</span>`:`<span style="color:#1D9E75"> — スケール可能</span>`}</div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #1e2f45;color:#4a6080;font-size:10.5px">
+      ④⑤確率を ${(r45*100).toFixed(4)}% → ${(r45*0.5*100).toFixed(4)}% に半減できれば、安全限界は <strong style="color:#1D9E75">${fG(imp)} GP</strong> まで延伸
+    </div>`;
+}
+
+window.addEventListener('load',()=>{
+  const gc={responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},layout:{padding:4}};
+  cS=new Chart(document.getElementById('c-static'),{
+    type:'line',data:{labels:[],datasets:[
+      {data:[],borderColor:'#D85A30',borderWidth:2,pointRadius:0,tension:0.3,fill:false},
+      {data:[],borderColor:'#E24B4A',borderWidth:2,pointRadius:0,tension:0.3,fill:false},
+      {data:[],borderColor:'#E24B4A',borderWidth:1,borderDash:[5,4],pointRadius:0,fill:false},
+    ]},
+    options:{...gc,scales:{
+      x:{grid:{color:'rgba(100,120,160,0.15)'},ticks:{color:'#4a6080',font:{size:9},maxTicksLimit:9}},
+      y:{grid:{color:'rgba(100,120,160,0.15)'},ticks:{color:'#4a6080',font:{size:9}},min:0,title:{display:true,text:'件/月',color:'#4a6080',font:{size:9}}}
+    }}
+  });
+  cT=new Chart(document.getElementById('c-time'),{
+    type:'line',data:{labels:ML,datasets:[
+      {data:[],borderColor:'#D85A30',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,yAxisID:'yi'},
+      {data:[],borderColor:'#E24B4A',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,yAxisID:'yi'},
+      {data:[],borderColor:'#888780',borderWidth:2.5,pointRadius:0,tension:0.3,fill:false,yAxisID:'yi'},
+      {data:[],borderColor:'#378ADD',borderWidth:1,borderDash:[4,3],pointRadius:0,tension:0.3,fill:false,yAxisID:'yg'},
+      {data:[],borderColor:'#E24B4A',borderWidth:1,borderDash:[5,4],pointRadius:0,fill:false,yAxisID:'yi'},
+    ]},
+    options:{...gc,scales:{
+      x:{grid:{color:'rgba(100,120,160,0.15)'},ticks:{color:'#4a6080',font:{size:8},maxTicksLimit:7,maxRotation:30}},
+      yi:{grid:{color:'rgba(100,120,160,0.15)'},ticks:{color:'#4a6080',font:{size:9}},position:'left',min:0,title:{display:true,text:'件/月',color:'#4a6080',font:{size:9}}},
+      yg:{grid:{display:false},ticks:{color:'#4a6080',font:{size:9},callback:v=>v>=1000?(v/1000).toFixed(1)+'K':v},position:'right',title:{display:true,text:'GP数',color:'#4a6080',font:{size:9}}}
+    }}
+  });
+  upd();
+});
+</script>
+</body>
+</html>
